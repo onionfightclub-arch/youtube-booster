@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { VideoMetadata, AnalysisResult } from "../types.ts";
 
 /**
- * Helper to extract JSON from model response text which might be wrapped in markdown.
+ * Helper to extract JSON from model response text.
  */
 const safeJsonParse = (text: string) => {
   try {
@@ -13,22 +13,14 @@ const safeJsonParse = (text: string) => {
     try {
       return JSON.parse(cleaned);
     } catch (e2) {
-      console.error("JSON Parse Error. Original text:", text);
-      throw new Error("The AI returned an invalid response format. This usually means the model's output was interrupted.");
+      throw new Error("Invalid AI response format. Please try again.");
     }
   }
 };
 
-const getAI = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === "undefined" || apiKey === "") {
-    throw new Error("Missing Gemini API Key. Please ensure the API_KEY environment variable is set.");
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
 export const analyzeMetadata = async (metadata: VideoMetadata): Promise<AnalysisResult> => {
-  const ai = getAI();
+  // Directly initialize per instructions
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const prompt = `
     Act as a world-class YouTube SEO expert. Analyze the following video metadata and provide a JSON report.
@@ -41,13 +33,7 @@ export const analyzeMetadata = async (metadata: VideoMetadata): Promise<Analysis
 
     Rules for grading:
     - Score each section (Title, Description, Tags) out of 100.
-    - Title: Analyze keyword placement and CTR potential.
-    - Description: Check for hooks, value propositions, and social links.
-    - Tags: Provide specificTag strings that would improve SEO.
-    - IMPORTANT: Each 'structuralSuggestions' entry MUST follow this exact string format: 
-      "Category | Title | Suggestion | Template: [Full text to copy]"
-    
-    Return ONLY valid JSON.
+    - Return ONLY valid JSON matching the schema.
   `;
 
   try {
@@ -103,32 +89,9 @@ export const analyzeMetadata = async (metadata: VideoMetadata): Promise<Analysis
     return safeJsonParse(response.text);
   } catch (error: any) {
     console.error("API Error:", error);
+    if (error.message?.includes("entity was not found") || error.message?.includes("API_KEY_INVALID")) {
+      throw new Error("REAUTH_REQUIRED");
+    }
     throw new Error(error.message || "Failed to contact Gemini API.");
   }
-};
-
-export const improveDescription = async (
-  currentDescription: string, 
-  title: string,
-  recommendations: string[],
-  duration?: string
-): Promise<string> => {
-  const ai = getAI();
-
-  const prompt = `
-    Rewrite this YouTube description for maximum SEO:
-    TITLE: ${title}
-    DURATION: ${duration || 'Unknown'}
-    CURRENT: ${currentDescription}
-    RECS: ${recommendations.join(', ')}
-    
-    Include a Hook, Value Prop, Timestamps, Social placeholders, and a CTA.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [{ parts: [{ text: prompt }] }],
-  });
-
-  return response.text?.trim() || 'Failed to generate improved description.';
 };
