@@ -2,36 +2,61 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { VideoMetadata, AnalysisResult, IntelligenceResult } from "../types.ts";
 
+/**
+ * Helper to extract JSON from model response text which might be wrapped in markdown.
+ */
+const safeJsonParse = (text: string) => {
+  try {
+    // Attempt direct parse first
+    return JSON.parse(text);
+  } catch (e) {
+    // If that fails, try to strip markdown blocks
+    const cleaned = text.replace(/```json\n?|```/g, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      console.error("JSON Parse Error. Original text:", text);
+      throw new Error("The AI returned an invalid response format. Please try again.");
+    }
+  }
+};
+
+const getAI = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing. Please check your environment configuration.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
 export const analyzeMetadata = async (metadata: VideoMetadata): Promise<AnalysisResult> => {
-  // Initialize right before call to ensure fresh environment access
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const prompt = `
-    Act as a world-class YouTube SEO expert and strategist. Analyze the following video metadata and provide a detailed grading report.
+    Act as a world-class YouTube SEO expert. Analyze the following video metadata and provide a JSON report.
     
     TITLE: ${metadata.title}
     DURATION: ${metadata.duration || 'Not specified'}
     DESCRIPTION: ${metadata.description}
     TAGS: ${metadata.tags}
-    ${metadata.script ? `SCRIPT/TRANSCRIPT CONTEXT: ${metadata.script}` : ''}
-
-    ${metadata.competitorUrl || metadata.competitorNotes ? `
-    COMPETITIVE CONTEXT:
-    Competitor URL: ${metadata.competitorUrl || 'Not provided'}
-    Competitor Notes: ${metadata.competitorNotes || 'Not provided'}
-    ` : ''}
+    ${metadata.script ? `SCRIPT CONTEXT: ${metadata.script}` : ''}
 
     Rules for grading:
-    1. Title: Check length, keywords, and CTR.
-    2. Description: Evaluate structural blocks and provide specific templates.
-    3. Formatting: Each 'structuralSuggestion' MUST follow: "Category | Title | Suggestion | Template: [Text]"
+    - Score each section (Title, Description, Tags) out of 100.
+    - Title: Analyze keyword placement and CTR potential.
+    - Description: Check for hooks, value propositions, and social links.
+    - Tags: Provide specificTag strings that would improve SEO.
+    - IMPORTANT: Each 'structuralSuggestions' entry MUST follow this exact string format: 
+      "Category | Title | Suggestion | Template: [Full text to copy]"
+      Example: "SOCIAL | Connect with Me | Add social media links | Template: Follow me on Instagram: @handle"
+
+    Return ONLY valid JSON.
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: "gemini-3-flash-preview",
     contents: [{ parts: [{ text: prompt }] }],
     config: {
-      thinkingConfig: { thinkingBudget: 32768 },
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -55,10 +80,7 @@ export const analyzeMetadata = async (metadata: VideoMetadata): Promise<Analysis
               feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
               recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
               suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              structuralSuggestions: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING }
-              },
+              structuralSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
             },
             required: ["score", "feedback", "recommendations", "suggestions", "structuralSuggestions"],
           },
@@ -73,23 +95,13 @@ export const analyzeMetadata = async (metadata: VideoMetadata): Promise<Analysis
             },
             required: ["score", "feedback", "recommendations", "suggestions", "specificTags"],
           },
-          competitiveAudit: {
-            type: Type.OBJECT,
-            properties: {
-              userStrengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-              competitorStrengths: { type: Type.ARRAY, items: { type: Type.STRING } },
-              gapAnalysis: { type: Type.STRING },
-              strategicMove: { type: Type.STRING },
-            },
-            required: ["userStrengths", "competitorStrengths", "gapAnalysis", "strategicMove"],
-          },
         },
         required: ["overallScore", "summary", "title", "description", "tags"],
       },
     },
   });
 
-  return JSON.parse(response.text);
+  return safeJsonParse(response.text);
 };
 
 export const improveDescription = async (
@@ -98,36 +110,36 @@ export const improveDescription = async (
   recommendations: string[],
   duration?: string
 ): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const prompt = `
-    Act as a professional YouTube Copywriter and SEO expert. Rewrite and expand the following description.
+    Rewrite this YouTube description for maximum SEO:
     TITLE: ${title}
     DURATION: ${duration || 'Unknown'}
-    DESC: ${currentDescription}
+    CURRENT: ${currentDescription}
     RECS: ${recommendations.join(', ')}
     
-    Requirements: Hook, Value Prop, Timestamps (based on ${duration || 'video'}), Socials, and CTA.
+    Include a Hook, Value Prop, Timestamps (estimate 3-5 based on ${duration || 'duration'}), Social placeholders, and a CTA.
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: "gemini-3-flash-preview",
     contents: [{ parts: [{ text: prompt }] }],
   });
 
-  return response.text?.trim() || 'Failed to generate optimized description.';
+  return response.text?.trim() || 'Failed to generate improved description.';
 };
 
 export const fetchMarketIntelligence = async (niche: string): Promise<IntelligenceResult> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const prompt = `
-    Fetch real-time YouTube market intelligence for: "${niche}".
-    Identify trending topics, keywords (Search Volume/Competition), and content gaps.
+    Use Google Search to find current trending topics, keywords, and content gaps for the YouTube niche: "${niche}".
+    Provide a strategic content report including estimated search volume and competition level for recommended keywords.
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: "gemini-3-flash-preview",
     contents: [{ parts: [{ text: prompt }] }],
     config: {
       tools: [{ googleSearch: {} }],
@@ -143,7 +155,7 @@ export const fetchMarketIntelligence = async (niche: string): Promise<Intelligen
     }));
 
   return {
-    text: response.text || "No intelligence data found.",
+    text: response.text || "No intelligence data could be synthesized for this niche.",
     sources: sources,
   };
 };
