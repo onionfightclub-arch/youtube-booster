@@ -7,8 +7,16 @@
   <title>YouTube Boost Grader</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    // Shim process for browser environments to prevent crashes in Gemini SDK initialization
-    window.process = window.process || { env: { API_KEY: "" } };
+    /** 
+     * Defensive shim for process.env
+     * Only initializes if process is truly missing to prevent app crashes,
+     * but does NOT overwrite a valid API_KEY if one exists.
+     */
+    if (typeof window.process === 'undefined') {
+      window.process = { env: {} };
+    } else if (typeof window.process.env === 'undefined') {
+      window.process.env = {};
+    }
     
     tailwind.config = {
       darkMode: 'class',
@@ -28,7 +36,6 @@
 </head>
 <body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300">
   <div id="root"></div>
-  <!-- Explicitly load the entry point as a module -->
   <script type="module" src="./index.tsx"></script>
 </body>
 </html>
