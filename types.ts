@@ -41,12 +41,7 @@ export interface SavedGrading {
   analysis: AnalysisResult;
 }
 
-export interface GroundingSource {
-  uri: string;
-  title: string;
-}
-
-export interface IntelligenceResult {
+export interface ChatMessage {
+  role: 'user' | 'model';
   text: string;
-  sources: GroundingSource[];
 }

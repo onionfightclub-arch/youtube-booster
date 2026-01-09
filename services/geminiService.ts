@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { VideoMetadata, AnalysisResult, IntelligenceResult } from "../types.ts";
+import { VideoMetadata, AnalysisResult } from "../types.ts";
 
 /**
  * Helper to extract JSON from model response text which might be wrapped in markdown.
@@ -128,34 +128,4 @@ export const improveDescription = async (
   });
 
   return response.text?.trim() || 'Failed to generate improved description.';
-};
-
-export const fetchMarketIntelligence = async (niche: string): Promise<IntelligenceResult> => {
-  const ai = getAI();
-
-  const prompt = `
-    Use Google Search to find current trending topics, keywords, and content gaps for the YouTube niche: "${niche}".
-    Provide a strategic content report including estimated search volume and competition level for recommended keywords.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
-      tools: [{ googleSearch: {} }],
-    },
-  });
-
-  const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-  const sources = groundingChunks
-    .filter((chunk: any) => chunk.web)
-    .map((chunk: any) => ({
-      uri: chunk.web.uri,
-      title: chunk.web.title,
-    }));
-
-  return {
-    text: response.text || "No intelligence data could be synthesized for this niche.",
-    sources: sources,
-  };
 };

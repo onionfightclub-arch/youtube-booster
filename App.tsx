@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { VideoMetadata, AnalysisResult, SavedGrading, IntelligenceResult } from './types.ts';
-import { analyzeMetadata, improveDescription, fetchMarketIntelligence } from './services/geminiService.ts';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { VideoMetadata, AnalysisResult, SavedGrading } from './types.ts';
+import { analyzeMetadata, improveDescription } from './services/geminiService.ts';
 import ScoreCard from './components/ScoreCard.tsx';
+import StrategyChat from './components/StrategyChat.tsx';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Cell, PieChart, Pie
@@ -14,7 +15,6 @@ const THEME_KEY = 'yt_boost_grader_theme';
 
 const App: React.FC = () => {
   const improvedDescRef = useRef<HTMLDivElement>(null);
-  const intelRef = useRef<HTMLDivElement>(null);
 
   const [metadata, setMetadata] = useState<VideoMetadata>(() => {
     const savedDraft = localStorage.getItem(DRAFT_KEY);
@@ -36,10 +36,6 @@ const App: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   
-  const [intelNiche, setIntelNiche] = useState('');
-  const [fetchingIntel, setFetchingIntel] = useState(false);
-  const [intelResult, setIntelResult] = useState<IntelligenceResult | null>(null);
-
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem(THEME_KEY);
     return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -71,12 +67,6 @@ const App: React.FC = () => {
       improvedDescRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [improvedDesc]);
-
-  useEffect(() => {
-    if (intelResult && intelRef.current) {
-      intelRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [intelResult]);
 
   const saveToStorage = (newSaves: SavedGrading[]) => {
     setSavedGradings(newSaves);
@@ -120,24 +110,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFetchIntelligence = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!intelNiche.trim()) return;
-
-    setFetchingIntel(true);
-    setError(null);
-    setIntelResult(null);
-    try {
-      const result = await fetchMarketIntelligence(intelNiche);
-      setIntelResult(result);
-    } catch (err: any) {
-      console.error(err);
-      setError(`Market Research Error: ${err.message || 'The grounding tool is temporarily unavailable.'}`);
-    } finally {
-      setFetchingIntel(false);
-    }
-  };
-
   const isAlreadySaved = useMemo(() => {
     if (!analysis) return false;
     return savedGradings.some(s => s.metadata.title === metadata.title && s.analysis.overallScore === analysis.overallScore);
@@ -163,7 +135,6 @@ const App: React.FC = () => {
     setMetadata({ title: '', description: '', tags: '', duration: '', script: '', competitorUrl: '', competitorNotes: '' });
     setAnalysis(null);
     setImprovedDesc(null);
-    setIntelResult(null);
     localStorage.removeItem(DRAFT_KEY);
   };
 
@@ -183,7 +154,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Fix: Added missing copy function for the AI-improved description
   const copyImprovedDescription = () => {
     if (improvedDesc) {
       navigator.clipboard.writeText(improvedDesc);
@@ -192,7 +162,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Fix: Added missing apply function to update the metadata description with AI output
   const applyImprovedDescription = () => {
     if (improvedDesc) {
       setMetadata(prev => ({ ...prev, description: improvedDesc }));
@@ -201,7 +170,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Fix: Added missing tag handler to update metadata tags from recommendations
   const handleAddTag = (tag: string) => {
     setMetadata(prev => {
       const currentTags = prev.tags.split(',').map(t => t.trim()).filter(t => t !== "");
@@ -281,43 +249,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
-        {/* Market Research Section */}
-        <div className="mb-10 bg-gradient-to-br from-indigo-900 to-black rounded-[2.5rem] p-10 text-white shadow-2xl overflow-hidden relative group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/20 blur-[100px] rounded-full -mr-20 -mt-20 group-hover:bg-indigo-500/30 transition-colors"></div>
-          <h2 className="text-4xl font-black uppercase mb-4 tracking-tighter relative">Trend Scanner</h2>
-          <p className="text-indigo-200 mb-8 max-w-xl font-medium relative">Enter your niche to discover trending keywords, current audience search patterns, and identified content gaps powered by live search.</p>
-          <form onSubmit={handleFetchIntelligence} className="flex flex-col sm:flex-row gap-4 max-w-2xl relative">
-            <input value={intelNiche} onChange={e => setIntelNiche(e.target.value)} placeholder="Niche (e.g. Minecraft Hacks, Skincare Routine...)" className="flex-1 px-6 py-4 bg-white/10 border border-white/20 rounded-2xl outline-none focus:bg-white/20 focus:border-indigo-400 transition-all font-bold placeholder:text-white/30" />
-            <button type="submit" disabled={fetchingIntel || !intelNiche.trim()} className="px-10 py-4 bg-white text-indigo-900 font-black rounded-2xl hover:scale-105 active:scale-95 transition-all uppercase text-xs disabled:opacity-50 shadow-xl">
-              {fetchingIntel ? 'Scanning...' : 'Scan Market'}
-            </button>
-          </form>
-
-          {intelResult && (
-            <div ref={intelRef} className="mt-8 p-8 bg-white/5 rounded-3xl border border-white/10 animate-in zoom-in-95 duration-500">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
-                  Market Analysis: {intelNiche}
-                </h3>
-                <button onClick={() => setIntelResult(null)} className="text-white/40 hover:text-white">✕</button>
-              </div>
-              <div className="whitespace-pre-wrap leading-relaxed opacity-90 prose prose-invert prose-indigo max-w-none text-indigo-50">{intelResult.text}</div>
-              {intelResult.sources.length > 0 && (
-                <div className="mt-10 pt-8 border-t border-white/10">
-                  <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-4">Referenced Intelligence</h4>
-                  <div className="flex flex-wrap gap-3">
-                    {intelResult.sources.map((s, i) => (
-                      <a key={i} href={s.uri} target="_blank" className="flex items-center gap-2 text-[10px] font-bold bg-white/5 px-4 py-2 rounded-xl hover:bg-indigo-600 transition-all border border-white/5">{s.title || 'Source Data'}</a>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
         <div className="grid lg:grid-cols-12 gap-10">
           <div className="lg:col-span-5">
             <div className="bg-white dark:bg-gray-900 p-8 rounded-[2rem] shadow-xl border dark:border-gray-800">
@@ -447,7 +379,6 @@ const App: React.FC = () => {
                 <div className="grid md:grid-cols-2 gap-6">
                   <ScoreCard label="Title Architecture" data={analysis.title} icon="📐" />
                   <ScoreCard label="Content Strategy" data={analysis.description} onAppendToDescription={handleAppendToDescription} currentTags={metadata.tags} icon="📋" />
-                  {/* Added missing Tags scorecard to display the recommended specificTags strings */}
                   <ScoreCard label="Metadata Tags" data={analysis.tags} onAddTag={handleAddTag} currentTags={metadata.tags} icon="🏷️" />
                 </div>
 
@@ -481,6 +412,10 @@ const App: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* Floating Intelligent Strategist */}
+      <StrategyChat metadata={metadata} analysis={analysis} />
+
       {saveStatus && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur-md text-white px-10 py-5 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl z-[100] animate-in slide-in-from-bottom-10">{saveStatus}</div>}
     </div>
   );
