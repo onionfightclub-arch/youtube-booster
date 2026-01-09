@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
-import { GradingDetails } from '../types';
+import { GradingDetails } from '../types.ts';
 
 interface SuggestionItem {
   category: string;
@@ -87,19 +87,25 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ label, data, icon, onAddTag, onAp
 
   const parseSuggestion = (item: string, index: number): SuggestionItem => {
     const parts = item.split('|').map(p => p.trim());
-    if (parts.length < 3) return { category: 'Task', title: item, description: '', template: '', originalIndex: index };
     
-    const category = parts[0];
-    const title = parts[1];
+    // Robust fallback for missing pipes
+    if (parts.length < 2) {
+      return { category: 'General', title: 'Action Item', description: item, template: '', originalIndex: index };
+    }
+
+    const category = parts[0] || 'Misc';
+    const title = parts[1] || 'SEO Suggestion';
     let desc = parts[2] || '';
     let template = '';
 
     const templateIndex = item.indexOf('Template:');
     if (templateIndex !== -1) {
       template = item.substring(templateIndex + 9).trim();
+      // Clean up bracket placeholders if AI added them
       if (template.startsWith('[') && template.endsWith(']')) {
         template = template.substring(1, template.length - 1);
       }
+      // Trim description if it includes the template text
       if (desc.includes('Template:')) {
         desc = desc.split('Template:')[0].trim();
       }
@@ -188,7 +194,6 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ label, data, icon, onAddTag, onAp
               Structural Groups
             </h4>
             <div className="space-y-8">
-              {/* Cast Object.entries result to fix 'unknown' type inference on 'items' */}
               {(Object.entries(groupedSuggestions) as [string, SuggestionItem[]][]).map(([groupName, items]) => {
                 const isGroupAdded = addedGroup === groupName;
                 return (
@@ -201,7 +206,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ label, data, icon, onAddTag, onAp
                         onClick={() => handleAddAllInGroup(groupName, items)}
                         className={`text-[9px] font-black uppercase px-2 py-1 rounded-lg transition-all ${
                           isGroupAdded 
-                          ? 'bg-green-600 text-white' 
+                          ? 'bg-green-600 text-white shadow-sm' 
                           : 'bg-indigo-100 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900'
                         }`}
                       >
@@ -216,7 +221,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ label, data, icon, onAddTag, onAp
                         return (
                           <div key={item.originalIndex} className="group relative">
                             <div className="flex items-start gap-4">
-                              <div className="mt-1 p-2 rounded-xl text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 border border-indigo-100 dark:border-indigo-900/50 shadow-sm">
+                              <div className="mt-1 p-2 rounded-xl text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 border border-indigo-100 dark:border-indigo-900/50 shadow-sm group-hover:shadow transition-shadow">
                                 {getStructuralIcon(item.category)}
                               </div>
                               <div className="flex-1 min-w-0">

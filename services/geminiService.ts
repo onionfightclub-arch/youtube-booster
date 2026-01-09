@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { VideoMetadata, AnalysisResult, IntelligenceResult } from "../types";
+import { VideoMetadata, AnalysisResult, IntelligenceResult } from "../types.ts";
 
 export const analyzeMetadata = async (metadata: VideoMetadata): Promise<AnalysisResult> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -110,7 +110,8 @@ export const analyzeMetadata = async (metadata: VideoMetadata): Promise<Analysis
 export const improveDescription = async (
   currentDescription: string, 
   title: string,
-  recommendations: string[]
+  recommendations: string[],
+  duration?: string
 ): Promise<string> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -118,6 +119,7 @@ export const improveDescription = async (
     Act as a professional YouTube Copywriter and SEO expert. Rewrite and expand the following video description to maximize engagement and keyword relevance.
     
     ORIGINAL TITLE: ${title}
+    VIDEO DURATION: ${duration || 'Unknown'}
     ORIGINAL DESCRIPTION: ${currentDescription}
     
     KEY SEO RECOMMENDATIONS TO APPLY:
@@ -127,7 +129,7 @@ export const improveDescription = async (
     1. THE HOOK: The first 2 lines must be high-impact summaries to grab attention before "show more".
     2. VALUE PROPOSITION: A clear "What this video covers" section.
     3. OPTIMIZED CONTENT: Incorporate the provided recommendations naturally.
-    4. CHAPTERS: Include a placeholder list for Timestamps (e.g., 00:00 - Introduction).
+    4. CHAPTERS: Include a placeholder list for Timestamps (e.g., 00:00 - Introduction). Based on the duration of ${duration || 'the video'}, suggest 3-5 logical break points.
     5. SOCIALS: A clear "Stay Connected" section with placeholders like @[YourHandle].
     6. CTA: A strong call to action (Subscribe, download, join).
 
@@ -144,7 +146,6 @@ export const improveDescription = async (
 
 /**
  * Uses Gemini with Google Search grounding to fetch trending YouTube topics and search insights.
- * This simulates the dynamic intelligence that would otherwise require multiple API calls (YouTube, Google Trends, etc.)
  */
 export const fetchMarketIntelligence = async (niche: string): Promise<IntelligenceResult> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
