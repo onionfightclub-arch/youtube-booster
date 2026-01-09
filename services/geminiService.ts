@@ -7,24 +7,22 @@ import { VideoMetadata, AnalysisResult } from "../types.ts";
  */
 const safeJsonParse = (text: string) => {
   try {
-    // Attempt direct parse first
     return JSON.parse(text);
   } catch (e) {
-    // If that fails, try to strip markdown blocks
     const cleaned = text.replace(/```json\n?|```/g, "").trim();
     try {
       return JSON.parse(cleaned);
     } catch (e2) {
       console.error("JSON Parse Error. Original text:", text);
-      throw new Error("The AI returned an invalid response format. Please try again.");
+      throw new Error("The AI returned an invalid response format. This usually means the model's output was interrupted.");
     }
   }
 };
 
 const getAI = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("Gemini API Key is missing. Please check your environment configuration.");
+  if (!apiKey || apiKey === "undefined" || apiKey === "") {
+    throw new Error("Missing Gemini API Key. Please ensure the API_KEY environment variable is set.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -48,60 +46,65 @@ export const analyzeMetadata = async (metadata: VideoMetadata): Promise<Analysis
     - Tags: Provide specificTag strings that would improve SEO.
     - IMPORTANT: Each 'structuralSuggestions' entry MUST follow this exact string format: 
       "Category | Title | Suggestion | Template: [Full text to copy]"
-      Example: "SOCIAL | Connect with Me | Add social media links | Template: Follow me on Instagram: @handle"
-
+    
     Return ONLY valid JSON.
   `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          overallScore: { type: Type.NUMBER },
-          summary: { type: Type.STRING },
-          title: {
-            type: Type.OBJECT,
-            properties: {
-              score: { type: Type.NUMBER },
-              feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
-              recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
-              suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [{ parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            overallScore: { type: Type.NUMBER },
+            summary: { type: Type.STRING },
+            title: {
+              type: Type.OBJECT,
+              properties: {
+                score: { type: Type.NUMBER },
+                feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
+                recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+                suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: ["score", "feedback", "recommendations", "suggestions"],
             },
-            required: ["score", "feedback", "recommendations", "suggestions"],
-          },
-          description: {
-            type: Type.OBJECT,
-            properties: {
-              score: { type: Type.NUMBER },
-              feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
-              recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
-              suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              structuralSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            description: {
+              type: Type.OBJECT,
+              properties: {
+                score: { type: Type.NUMBER },
+                feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
+                recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+                suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                structuralSuggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: ["score", "feedback", "recommendations", "suggestions", "structuralSuggestions"],
             },
-            required: ["score", "feedback", "recommendations", "suggestions", "structuralSuggestions"],
-          },
-          tags: {
-            type: Type.OBJECT,
-            properties: {
-              score: { type: Type.NUMBER },
-              feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
-              recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
-              suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              specificTags: { type: Type.ARRAY, items: { type: Type.STRING } },
+            tags: {
+              type: Type.OBJECT,
+              properties: {
+                score: { type: Type.NUMBER },
+                feedback: { type: Type.ARRAY, items: { type: Type.STRING } },
+                recommendations: { type: Type.ARRAY, items: { type: Type.STRING } },
+                suggestions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                specificTags: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: ["score", "feedback", "recommendations", "suggestions", "specificTags"],
             },
-            required: ["score", "feedback", "recommendations", "suggestions", "specificTags"],
           },
+          required: ["overallScore", "summary", "title", "description", "tags"],
         },
-        required: ["overallScore", "summary", "title", "description", "tags"],
       },
-    },
-  });
+    });
 
-  return safeJsonParse(response.text);
+    if (!response.text) throw new Error("Empty response from AI.");
+    return safeJsonParse(response.text);
+  } catch (error: any) {
+    console.error("API Error:", error);
+    throw new Error(error.message || "Failed to contact Gemini API.");
+  }
 };
 
 export const improveDescription = async (
@@ -119,7 +122,7 @@ export const improveDescription = async (
     CURRENT: ${currentDescription}
     RECS: ${recommendations.join(', ')}
     
-    Include a Hook, Value Prop, Timestamps (estimate 3-5 based on ${duration || 'duration'}), Social placeholders, and a CTA.
+    Include a Hook, Value Prop, Timestamps, Social placeholders, and a CTA.
   `;
 
   const response = await ai.models.generateContent({

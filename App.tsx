@@ -19,9 +19,7 @@ const App: React.FC = () => {
   const [metadata, setMetadata] = useState<VideoMetadata>(() => {
     const savedDraft = localStorage.getItem(DRAFT_KEY);
     if (savedDraft) {
-      try {
-        return JSON.parse(savedDraft);
-      } catch (e) { console.error("Failed to parse draft", e); }
+      try { return JSON.parse(savedDraft); } catch (e) { console.error("Failed to parse draft", e); }
     }
     return { title: '', description: '', tags: '', duration: '', script: '', competitorUrl: '', competitorNotes: '' };
   });
@@ -35,11 +33,17 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [apiReady, setApiReady] = useState(false);
   
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem(THEME_KEY);
     return saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
+
+  useEffect(() => {
+    const key = process.env.API_KEY;
+    setApiReady(!!key && key !== "undefined" && key !== "");
+  }, []);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -62,12 +66,6 @@ const App: React.FC = () => {
     localStorage.setItem(DRAFT_KEY, JSON.stringify(metadata));
   }, [metadata]);
 
-  useEffect(() => {
-    if (improvedDesc && improvedDescRef.current) {
-      improvedDescRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [improvedDesc]);
-
   const saveToStorage = (newSaves: SavedGrading[]) => {
     setSavedGradings(newSaves);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newSaves));
@@ -79,19 +77,19 @@ const App: React.FC = () => {
   };
 
   const handleAppendToDescription = (text: string) => {
-    setMetadata(prev => {
-      const current = prev.description.trim();
-      const separator = current === '' ? '' : '\n\n';
-      return { ...prev, description: current + separator + text };
-    });
+    setMetadata(prev => ({ ...prev, description: (prev.description.trim() + '\n\n' + text).trim() }));
     setSaveStatus('Section Added!');
     setTimeout(() => setSaveStatus(null), 2000);
   };
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!apiReady) {
+      setError("AI System is not ready. Missing API Key in environment.");
+      return;
+    }
     if (!metadata.title.trim() || !metadata.description.trim()) {
-      setError('Please enter a Title and Description to analyze.');
+      setError('Please enter a Title and Description.');
       return;
     }
 
@@ -104,7 +102,7 @@ const App: React.FC = () => {
       setAnalysis(result);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Analysis failed. This usually happens due to API limits or network issues.');
+      setError(err.message || 'Analysis failed. Please check your connection.');
     } finally {
       setLoading(false);
     }
@@ -129,53 +127,9 @@ const App: React.FC = () => {
   };
 
   const handleNewGrading = () => {
-    if (analysis && !isAlreadySaved) {
-      if (!confirm('Clear editor and start new analysis?')) return;
-    }
     setMetadata({ title: '', description: '', tags: '', duration: '', script: '', competitorUrl: '', competitorNotes: '' });
     setAnalysis(null);
     setImprovedDesc(null);
-    localStorage.removeItem(DRAFT_KEY);
-  };
-
-  const handleExpandDescription = async () => {
-    if (!analysis) return;
-    setExpanding(true);
-    setError(null);
-    try {
-      const allRecs = [...analysis.title.recommendations, ...analysis.description.recommendations].slice(0, 10);
-      const improved = await improveDescription(metadata.description, metadata.title, allRecs, metadata.duration);
-      setImprovedDesc(improved);
-    } catch (err: any) {
-      console.error(err);
-      setError(`Improvement Error: ${err.message}`);
-    } finally {
-      setExpanding(false);
-    }
-  };
-
-  const copyImprovedDescription = () => {
-    if (improvedDesc) {
-      navigator.clipboard.writeText(improvedDesc);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    }
-  };
-
-  const applyImprovedDescription = () => {
-    if (improvedDesc) {
-      setMetadata(prev => ({ ...prev, description: improvedDesc }));
-      setSaveStatus('Description Updated!');
-      setTimeout(() => setSaveStatus(null), 2000);
-    }
-  };
-
-  const handleAddTag = (tag: string) => {
-    setMetadata(prev => {
-      const currentTags = prev.tags.split(',').map(t => t.trim()).filter(t => t !== "");
-      if (currentTags.some(t => t.toLowerCase() === tag.toLowerCase())) return prev;
-      return { ...prev, tags: currentTags.length > 0 ? [...currentTags, tag].join(', ') : tag };
-    });
   };
 
   const barChartData = useMemo(() => {
@@ -212,112 +166,80 @@ const App: React.FC = () => {
             <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-red-600 to-red-800 dark:from-red-500 dark:to-red-700 uppercase tracking-tighter">Boost Grader</h1>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 text-xl hover:scale-110 transition-transform">
-              {isDarkMode ? '☀️' : '🌙'}
-            </button>
-            <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 transition-colors">
-              History ({savedGradings.length})
-            </button>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black uppercase ${apiReady ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700 animate-pulse'}`}>
+              <div className={`w-2 h-2 rounded-full ${apiReady ? 'bg-green-500' : 'bg-red-500'}`}></div>
+              {apiReady ? 'AI Ready' : 'AI Disconnected'}
+            </div>
+            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 text-xl">{isDarkMode ? '☀️' : '🌙'}</button>
+            <button onClick={() => setShowHistory(!showHistory)} className="flex items-center gap-2 px-4 py-2 text-sm font-bold rounded-xl bg-gray-100 dark:bg-gray-800">History</button>
           </div>
         </div>
       </nav>
 
       {showHistory && (
         <div className="fixed inset-0 z-[60] bg-gray-900/60 backdrop-blur-sm flex justify-end" onClick={() => setShowHistory(false)}>
-          <div className="w-full max-w-sm bg-white dark:bg-gray-900 shadow-2xl p-6 overflow-y-auto transform animate-in slide-in-from-right duration-300" onClick={e => e.stopPropagation()}>
+          <div className="w-full max-w-sm bg-white dark:bg-gray-900 shadow-2xl p-6 overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-xl font-black uppercase tracking-tight">Saved Reports</h2>
-              <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-red-500">✕</button>
+              <button onClick={() => setShowHistory(false)}>✕</button>
             </div>
             <div className="space-y-4">
-              {savedGradings.length === 0 ? (
-                <p className="text-center py-10 text-gray-500 font-medium">No reports saved yet.</p>
-              ) : (
-                savedGradings.map(save => (
-                  <div key={save.id} onClick={() => { setMetadata(save.metadata); setAnalysis(save.analysis); setShowHistory(false); }} className="p-4 border dark:border-gray-800 rounded-2xl cursor-pointer hover:border-red-500 transition-all bg-gray-50 dark:bg-gray-800/50 group">
-                    <p className="text-[10px] font-bold text-gray-400 mb-1">{new Date(save.timestamp).toLocaleString()}</p>
-                    <h3 className="font-bold text-sm line-clamp-1 group-hover:text-red-500 transition-colors">{save.metadata.title}</h3>
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase bg-red-500 text-white px-2 py-0.5 rounded">Score: {save.analysis.overallScore}</span>
-                      <button onClick={(e) => { e.stopPropagation(); saveToStorage(savedGradings.filter(s => s.id !== save.id)); }} className="text-xs text-gray-400 hover:text-red-500">Delete</button>
-                    </div>
-                  </div>
-                ))
-              )}
+              {savedGradings.map(save => (
+                <div key={save.id} onClick={() => { setMetadata(save.metadata); setAnalysis(save.analysis); setShowHistory(false); }} className="p-4 border dark:border-gray-800 rounded-2xl cursor-pointer hover:border-red-500 bg-gray-50 dark:bg-gray-800/50">
+                  <p className="text-[10px] font-bold text-gray-400 mb-1">{new Date(save.timestamp).toLocaleString()}</p>
+                  <h3 className="font-bold text-sm line-clamp-1">{save.metadata.title}</h3>
+                  <span className="text-[10px] font-black uppercase bg-red-500 text-white px-2 py-0.5 rounded mt-2 inline-block">Score: {save.analysis.overallScore}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12">
+        {!apiReady && (
+          <div className="mb-10 p-6 bg-red-50 dark:bg-red-900/20 border-2 border-dashed border-red-200 dark:border-red-800 rounded-3xl text-center">
+            <h3 className="text-lg font-black text-red-600 dark:text-red-400 uppercase tracking-tight">Environment Configuration Required</h3>
+            <p className="text-sm text-red-500/80 font-medium mt-1">The Gemini API Key is missing. Please set the <code>API_KEY</code> environment variable in your platform settings to enable analysis and strategist features.</p>
+          </div>
+        )}
+
         <div className="grid lg:grid-cols-12 gap-10">
           <div className="lg:col-span-5">
             <div className="bg-white dark:bg-gray-900 p-8 rounded-[2rem] shadow-xl border dark:border-gray-800">
               <div className="flex justify-between items-center mb-8">
-                <h2 className="text-xl font-black flex items-center gap-2 uppercase tracking-tight">
-                  <span className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg text-red-600">✍️</span>
-                  Optimization Editor
-                </h2>
-                <button onClick={handleNewGrading} className="text-[10px] font-black uppercase text-gray-400 hover:text-red-500 transition-colors">New Audit</button>
+                <h2 className="text-xl font-black flex items-center gap-2 uppercase tracking-tight">Optimization Editor</h2>
+                <button onClick={handleNewGrading} className="text-[10px] font-black uppercase text-gray-400 hover:text-red-500">New Audit</button>
               </div>
               <form onSubmit={handleAnalyze} className="space-y-6">
                 <div>
                   <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 tracking-widest">Video Title</label>
-                  <input name="title" value={metadata.title} onChange={handleInputChange} placeholder="Draft title here..." className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none focus:border-red-500 transition-all font-bold" />
+                  <input name="title" value={metadata.title} onChange={handleInputChange} placeholder="Video title..." className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none focus:border-red-500 transition-all font-bold" />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 tracking-widest">Duration</label>
-                    <input name="duration" value={metadata.duration} onChange={handleInputChange} placeholder="e.g. 10:45" className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none focus:border-red-500 transition-all font-bold" />
-                  </div>
-                   <div>
-                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 tracking-widest">Tags (Comma split)</label>
-                    <input name="tags" value={metadata.tags} onChange={handleInputChange} placeholder="seo, tags, viral" className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none focus:border-red-500 transition-all font-bold" />
-                  </div>
+                  <input name="duration" value={metadata.duration} onChange={handleInputChange} placeholder="Duration (e.g. 10:45)" className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none font-bold" />
+                  <input name="tags" value={metadata.tags} onChange={handleInputChange} placeholder="Tags (comma split)" className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none font-bold" />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 tracking-widest">Description Content</label>
-                  <textarea name="description" value={metadata.description} onChange={handleInputChange} rows={8} placeholder="Draft description here..." className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none focus:border-red-500 transition-all font-medium resize-none leading-relaxed" />
+                  <label className="block text-[10px] font-black uppercase text-gray-400 mb-2 tracking-widest">Description</label>
+                  <textarea name="description" value={metadata.description} onChange={handleInputChange} rows={8} placeholder="Draft description here..." className="w-full p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-2xl outline-none focus:border-red-500 font-medium resize-none" />
                 </div>
-                <button type="submit" disabled={loading} className="w-full py-5 bg-red-600 text-white font-black rounded-3xl shadow-xl hover:bg-red-700 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 uppercase tracking-widest text-sm">
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                      Crunching Data...
-                    </span>
-                  ) : 'Execute SEO Audit'}
+                <button type="submit" disabled={loading || !apiReady} className="w-full py-5 bg-red-600 text-white font-black rounded-3xl shadow-xl hover:bg-red-700 disabled:opacity-50 uppercase tracking-widest text-sm">
+                  {loading ? 'Crunching Data...' : 'Execute SEO Audit'}
                 </button>
               </form>
-              {error && <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-xs font-black border border-red-100 dark:border-red-900/30 animate-shake">{error}</div>}
+              {error && <div className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-xs font-black border border-red-100">{error}</div>}
             </div>
           </div>
 
           <div className="lg:col-span-7">
-            {!analysis && !loading && (
-              <div className="h-full flex flex-col items-center justify-center text-center p-10 bg-white/50 dark:bg-gray-900/50 rounded-[2.5rem] border-4 border-dashed border-gray-100 dark:border-gray-800">
-                <div className="text-6xl mb-4 grayscale opacity-30">🚀</div>
-                <h3 className="text-2xl font-black text-gray-400 uppercase tracking-tight">Audit Ready</h3>
-                <p className="text-gray-400 max-w-xs mt-2 font-medium">Input your metadata to generate your SEO score and optimization roadmap.</p>
-              </div>
-            )}
-
-            {analysis && (
+            {analysis ? (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-500">
-                {/* Score Summary Block */}
                 <div className="bg-white dark:bg-gray-900 p-8 rounded-[2.5rem] shadow-2xl flex flex-col md:flex-row items-center gap-10 border dark:border-gray-800">
-                  <div className="w-48 h-48 relative flex-shrink-0 scale-110">
+                  <div className="w-48 h-48 relative flex-shrink-0">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
-                        <Pie
-                          data={pieChartData}
-                          innerRadius={65}
-                          outerRadius={85}
-                          paddingAngle={0}
-                          dataKey="value"
-                          stroke="none"
-                          startAngle={90}
-                          endAngle={450}
-                        >
+                        <Pie data={pieChartData} innerRadius={65} outerRadius={85} paddingAngle={0} dataKey="value" stroke="none" startAngle={90} endAngle={450}>
                           <Cell key="cell-0" fill={getScoreColor(analysis.overallScore)} />
                           <Cell key="cell-1" fill={isDarkMode ? '#1f2937' : '#f3f4f6'} />
                         </Pie>
@@ -328,16 +250,10 @@ const App: React.FC = () => {
                       <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Overall</div>
                     </div>
                   </div>
-                  
                   <div className="flex-1 space-y-4">
                     <div className="flex justify-between items-start">
-                      <div className="space-y-1">
-                        <h2 className="text-2xl font-black uppercase tracking-tight text-gray-800 dark:text-gray-100">Performance Verdict</h2>
-                        <div className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full inline-block ${analysis.overallScore >= 80 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                           {analysis.overallScore >= 80 ? 'Optimized' : 'Needs Optimization'}
-                        </div>
-                      </div>
-                      <button onClick={handleSaveGrading} disabled={isAlreadySaved} className={`p-4 rounded-2xl transition-all shadow-sm ${isAlreadySaved ? 'bg-gray-50 text-gray-300' : 'bg-gray-50 dark:bg-gray-800 hover:bg-red-500 hover:text-white dark:hover:bg-red-600'}`}>
+                      <h2 className="text-2xl font-black uppercase tracking-tight text-gray-800 dark:text-gray-100">Performance Verdict</h2>
+                      <button onClick={handleSaveGrading} disabled={isAlreadySaved} className={`p-4 rounded-2xl transition-all shadow-sm ${isAlreadySaved ? 'bg-gray-50 text-gray-300' : 'bg-gray-50 dark:bg-gray-800 hover:bg-red-500 hover:text-white'}`}>
                         {isAlreadySaved ? '✓' : '💾'}
                       </button>
                     </div>
@@ -345,78 +261,24 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Bar Chart Block */}
-                <div className="bg-white dark:bg-gray-900 p-8 rounded-[2rem] shadow-xl border dark:border-gray-800">
-                  <h3 className="text-xs font-black uppercase text-gray-400 mb-8 tracking-widest">Sectional Strength</h3>
-                  <div className="h-64 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={barChartData} margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? '#374151' : '#f1f5f9'} />
-                        <XAxis dataKey="name" stroke={isDarkMode ? '#9ca3af' : '#6b7280'} fontSize={11} fontWeight="bold" tickLine={false} axisLine={false} dy={10} />
-                        <YAxis hide domain={[0, 100]} />
-                        <Tooltip 
-                          cursor={{ fill: isDarkMode ? '#1f2937' : '#f9fafb', radius: 15 }}
-                          contentStyle={{ 
-                            borderRadius: '20px', 
-                            border: 'none', 
-                            boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
-                            backgroundColor: isDarkMode ? '#111827' : '#ffffff',
-                            fontWeight: 'bold',
-                            fontSize: '12px'
-                          }}
-                        />
-                        <Bar dataKey="score" radius={[12, 12, 12, 12]} barSize={50}>
-                          {barChartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={getScoreColor(entry.score)} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Score Cards Grid */}
                 <div className="grid md:grid-cols-2 gap-6">
                   <ScoreCard label="Title Architecture" data={analysis.title} icon="📐" />
                   <ScoreCard label="Content Strategy" data={analysis.description} onAppendToDescription={handleAppendToDescription} currentTags={metadata.tags} icon="📋" />
-                  <ScoreCard label="Metadata Tags" data={analysis.tags} onAddTag={handleAddTag} currentTags={metadata.tags} icon="🏷️" />
+                  <ScoreCard label="Metadata Tags" data={analysis.tags} currentTags={metadata.tags} icon="🏷️" />
                 </div>
-
-                {/* AI Polish Section */}
-                <div className="bg-indigo-600 dark:bg-indigo-800 p-10 rounded-[2.5rem] flex flex-col sm:flex-row justify-between items-center text-white shadow-2xl shadow-indigo-500/30 group">
-                  <div className="mb-6 sm:mb-0 text-center sm:text-left">
-                    <h3 className="text-2xl font-black uppercase tracking-tight">AI Polish Magic</h3>
-                    <p className="text-indigo-100 text-sm font-bold opacity-80 uppercase tracking-widest">Complete SEO Refactor</p>
-                  </div>
-                  <button onClick={handleExpandDescription} disabled={expanding} className="px-10 py-5 bg-white text-indigo-600 font-black rounded-2xl hover:scale-105 active:scale-95 transition-all uppercase text-xs shadow-xl group-hover:rotate-1">
-                    {expanding ? 'Brewing...' : 'Invoke Magic'}
-                  </button>
-                </div>
-
-                {improvedDesc && (
-                  <div ref={improvedDescRef} className="p-8 bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-2xl border-2 border-indigo-100 dark:border-indigo-900/50 relative animate-in slide-in-from-bottom-5 duration-700">
-                    <div className="absolute top-0 right-10 -mt-3 bg-indigo-600 text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">New Draft</div>
-                    <textarea readOnly value={improvedDesc} className="w-full h-80 p-8 bg-gray-50 dark:bg-gray-800 rounded-3xl outline-none font-medium leading-relaxed resize-none dark:text-gray-200 border border-transparent focus:border-indigo-400 transition-colors" />
-                    <div className="flex flex-col sm:flex-row justify-end gap-4 mt-8">
-                      <button onClick={copyImprovedDescription} className={`px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all ${isCopied ? 'bg-green-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200'}`}>
-                        {isCopied ? 'Copied!' : 'Copy to Clipboard'}
-                      </button>
-                      <button onClick={applyImprovedDescription} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all">
-                        Apply to Editor
-                      </button>
-                    </div>
-                  </div>
-                )}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center p-10 bg-white/50 dark:bg-gray-900/50 rounded-[2.5rem] border-4 border-dashed border-gray-100 dark:border-gray-800">
+                <div className="text-6xl mb-4 grayscale opacity-30">🚀</div>
+                <h3 className="text-2xl font-black text-gray-400 uppercase tracking-tight">Ready for Audit</h3>
               </div>
             )}
           </div>
         </div>
       </main>
 
-      {/* Floating Intelligent Strategist */}
       <StrategyChat metadata={metadata} analysis={analysis} />
-
-      {saveStatus && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur-md text-white px-10 py-5 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl z-[100] animate-in slide-in-from-bottom-10">{saveStatus}</div>}
+      {saveStatus && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-900/90 backdrop-blur-md text-white px-10 py-5 rounded-full font-black uppercase text-[10px] tracking-widest shadow-2xl z-[100]">{saveStatus}</div>}
     </div>
   );
 };

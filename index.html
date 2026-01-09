@@ -8,15 +8,11 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     /** 
-     * Defensive shim for process.env
-     * Only initializes if process is truly missing to prevent app crashes,
-     * but does NOT overwrite a valid API_KEY if one exists.
+     * Robust environment shim.
+     * Ensures process.env.API_KEY is accessible.
      */
-    if (typeof window.process === 'undefined') {
-      window.process = { env: {} };
-    } else if (typeof window.process.env === 'undefined') {
-      window.process.env = {};
-    }
+    window.process = window.process || { env: {} };
+    if (!window.process.env) window.process.env = {};
     
     tailwind.config = {
       darkMode: 'class',
